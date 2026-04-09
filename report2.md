@@ -14,6 +14,10 @@ Walidacja sekwencji ewakuacji oraz identyfikacja punktów zatłoczenia przeprowa
 
 ![Krzywa ewakuacji – porównanie wersji symulacji z rzeczywistymi danymi](evacuation_curve.png)
 
+## Dane walidacyjne
+
+Dane walidacyjne zostały wyekstrachowane na podstawie wykresu rzeczywistych danych ewakuacyjnych, zbieranych ręcznie na podstawie danych z monitoringu z okresu rzeczywistej próby ewakuacji w D17. Z rzeczywistych danych odczytano około 560 punktów (x,y) w których x oznacza sekundę działania symulacji, przy założeniu, że jedna iteracja(/tick w przypadku net logo) symulacji trwa jedną sekundę. Zmienna y oznacza ilość osób które są bezpiecznie poza budynkiem w wyznaczonym miejscu ewakuacji, w określonym momencie czasu
+
 ## Rozmiar komórki siatki dyskretyzacji
 
 W analizowanej literaturze naukowej powszechnie stosuje się zróżnicowany rozmiar komórki siatki dyskretyzacji dla poszczególnych kondygnacji lub sekcji budynku. Zabieg ten umożliwia wierne odwzorowanie rzeczywistej przepustowości przejść – przykładowo, przejście o większej szerokości może zachowywać się funkcjonalnie identycznie jak przejście węższe, jeśli jego geometria faktycznie ogranicza jednoczesny przepływ do jednej osoby.
