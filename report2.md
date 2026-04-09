@@ -12,6 +12,8 @@ W celu oceny poprawności opracowanej symulacji ewakuacji przyjęto trzy metody 
 
 Walidacja sekwencji ewakuacji oraz identyfikacja punktów zatłoczenia przeprowadzona zostanie poprzez bezpośrednią obserwację przebiegu symulacji. Krzywą ewakuacji pozyskano z dostępnej literatury naukowej. Ze względu na brak dostępu do surowych danych pomiarowych, krzywa ta została odtworzona syntetycznie z wykorzystaniem alternatywnej metody aproksymacji.
 
+![Krzywa ewakuacji – porównanie wersji symulacji z rzeczywistymi danymi](evacuation_curve.png)
+
 ## Rozmiar komórki siatki dyskretyzacji
 
 W analizowanej literaturze naukowej powszechnie stosuje się zróżnicowany rozmiar komórki siatki dyskretyzacji dla poszczególnych kondygnacji lub sekcji budynku. Zabieg ten umożliwia wierne odwzorowanie rzeczywistej przepustowości przejść – przykładowo, przejście o większej szerokości może zachowywać się funkcjonalnie identycznie jak przejście węższe, jeśli jego geometria faktycznie ogranicza jednoczesny przepływ do jednej osoby.
