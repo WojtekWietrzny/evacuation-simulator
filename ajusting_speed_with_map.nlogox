@@ -1,203 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.3" snapToGrid="true">
-  <code><![CDATA[extensions [ table ]
-
-patches-own [
-  is-wall?
-  is-exit?
-  distance-to-exit
-]
-
-breed [people person]
-
-people-own [
-  wait-counter
-]
-
-to setup
+  <code>to setup
   clear-all
-
-  ;; 1. Initialize all patches
-  ask patches [
-    set is-wall?         false
-    set is-exit?         false
-    set distance-to-exit 99999
-    set pcolor           white
-  ]
-
-  ;; 2. Draw the dividing Wall 
-  ;; The wall's vertical position and thickness now scale
-  let wall-top (-1 * scale-factor)
-  let wall-bottom (wall-top - scale-factor) 
+  import-pcolors "map-square.jpg" ; Sets the pcolor of every patch to the image pixel color
   
-  ask patches with [pycor <= wall-top and pycor >= wall-bottom] [
-    set is-wall? true
-    set pcolor black
-  ]
-
-  ;; 3. Create the gap
-  ;; The gap width is now (scale-factor * 2) so agents can always pass
-  ask patches with [is-wall? and pxcor >= 0 and pxcor < (scale-factor * 2)] [
-    set is-wall? false
-    set pcolor white
-  ]
-
-  ;; 4. Define the Exit area (Scales distance and height)
-  let exit-y-start (5 * scale-factor)
-  let exit-y-end (exit-y-start + scale-factor)
-  ask patches with [pycor >= exit-y-start and pycor <= exit-y-end and abs pxcor <= (4 * scale-factor)] [
-    set is-exit? true
-    set pcolor brown
-  ]
-
-  ;; 5. Create the Spawner Area (Scales area size)
-  let spawn-top (-10 * scale-factor)
-  let spawn-bottom (-16 * scale-factor)
-  let spawner-area patches with [
-    abs pxcor <= (4 * scale-factor) and 
-    pycor <= spawn-top and 
-    pycor >= spawn-bottom
-  ]
-  
-  ask spawner-area [ 
-    set pcolor 8 
-  ]
-
-  ;; 6. Spawn agents with scaled size
-  ;; We use 'min' to ensure we don't try to spawn more people than there are patches
-  let total-to-spawn 40
-  let available-patches count spawner-area
-  
-  ask n-of (min list total-to-spawn available-patches) spawner-area [
-    sprout 1 [
-      set breed people
-      set shape "person"
-      set color blue
-      set size scale-factor  ;; Agent size matches the scaling
-      set wait-counter 0
+  ;; 2. Spawn the agent
+  create-turtles 100 [
+    set size 2
+    set color blue
+    
+    ;; Move the turtle to a random patch that is black
+    move-to one-of patches with [pcolor = red]
+    
+    ;; If no black patches exist, the turtle stays at (0,0)
+    if pcolor != black [ 
+      print "No black patches found! Check your image colors." 
     ]
   ]
-
-  calculate-distance-map
+  
   reset-ticks
-end
-
-
-to calculate-distance-map
-  ;; Reset distances
-  ask patches [ set distance-to-exit 99999 ]
-  ask patches with [is-exit?] [ set distance-to-exit 0 ]
-
-  ;; Weighted Wavefront Algorithm
-  let changed? true
-  while [changed?] [
-    set changed? false
-    
-    ask patches with [not is-wall?] [
-      let my-dist distance-to-exit
-      let new-dist my-dist
-      
-      ;; Check orthogonal neighbors (up, down, left, right) - Cost is 10
-      ask neighbors4 with [not is-wall?] [
-        if distance-to-exit + 10 < new-dist [
-          set new-dist distance-to-exit + 10
-        ]
-      ]
-      
-      ;; Check diagonal neighbors - Cost is 15 (higher penalty)
-      ask neighbors with [not is-wall? and not member? self [neighbors4] of myself] [
-        if distance-to-exit + 15 < new-dist [
-          set new-dist distance-to-exit + 15
-        ]
-      ]
-      
-      ;; If we found a faster route, update and trigger another loop
-      if new-dist < my-dist [
-        set distance-to-exit new-dist
-        set changed? true
-      ]
-    ]
-  ]
-end
-
-to go
-  ;; Stop the simulation when everyone has escaped
-  if not any? people [ 
-    user-message (word "Evacuation Complete!\nIt took " ticks " ticks for all agents to escape.")
-    stop 
-  ]
-
-  ;; Only execute movement if the current tick aligns with the slider value
-  if ticks mod ticks-per-move = 0 [
-    
-    ;; --- MOVEMENT with reservation system ---
-    let moves table:make   ;; patch -> [list of people who want to move there]
-
-    ;; Step 1: Every agent picks its desired next patch
-    ask people [
-      let my-dist [distance-to-exit] of patch-here
-      
-      ;; ONLY consider neighbors that are strictly closer to the exit than current spot
-      let walkable neighbors with [
-        not is-wall? and 
-        not any? people-here and 
-        distance-to-exit < my-dist
-      ]
-
-      ;; Default to staying put
-      let best-step patch-here 
-      
-      ;; If there is a better patch available, pick the absolute best one
-      if any? walkable [
-        set best-step min-one-of walkable [distance-to-exit]
-      ]
-
-      ;; Register their bid in the table
-      let key (list [pxcor] of best-step [pycor] of best-step)
-      let current-list []
-      if table:has-key? moves key [ set current-list table:get moves key ]
-      table:put moves key (lput self current-list)
-    ]
-
-    ;; Step 2: Resolve conflicts (whoever has waited longest gets the spot)
-    foreach table:keys moves [ k ->
-      let contestants table:get moves k
-      let winner max-one-of (turtle-set contestants) [wait-counter]
-      
-      let target-patch patch (item 0 k) (item 1 k)
-
-      ask winner [
-        ;; Only attempt to move if the target is different from where we are
-        if target-patch != patch-here [
-          if not any? other people-on target-patch [
-            face target-patch
-            move-to target-patch
-            set wait-counter 0
-            
-            ;; If the agent just stepped onto the exit, remove them immediately
-            if [is-exit?] of patch-here [ die ]
-          ]
-        ]
-      ]
-      
-      ;; Losers increment their wait counter so they have higher priority next time
-      foreach contestants [ c ->
-        if c != winner [
-          ask c [ set wait-counter wait-counter + 1 ]
-        ]
-      ]
-    ]
-  ]
-
-  ;; Advance the global timer
-  tick
-  
-  ;; Step 3: Check if evacuation is complete
-  if not any? people [ 
-    user-message (word "Evacuation Complete!\nIt took " ticks " ticks for all agents to escape.")
-    stop 
-  ]
-end]]></code>
+end</code>
   <widgets>
     <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-100" height="607" showTickCounter="true" patchSize="3.0" fontSize="10" wrappingAllowedY="false" width="607" tickCounterLabel="ticks" maxPycor="100" updateMode="1" maxPxcor="100" minPxcor="-100"></view>
     <button x="15" y="30" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
