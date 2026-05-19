@@ -1,219 +1,236 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.3" snapToGrid="true">
-  <code>to setup
-  ca
-  ask patches with [
-    pxcor = max-pxcor or pxcor = min-pxcor or
-    pycor = max-pycor or pycor = min-pycor
-  ] [
-    set pcolor blue
+  <code><![CDATA[extensions [ table ]
+
+patches-own [
+  is-door?
+  max-to-spawn
+  already-spawned
+  start-time
+  is-wall?
+  is-exit?
+  distance-to-exit
+  reserved-by   ;; who reserved this patch this tick (-1 = free)
+]
+
+breed [people person]
+
+people-own [
+  wait-counter  ;; how long this agent has been blocked
+]
+
+to setup
+  clear-all
+
+  ask patches [
+    set is-wall?         false
+    set is-door?         false
+    set is-exit?         false
+    set already-spawned  0
+    set distance-to-exit 99999
+    set reserved-by      -1
+    set pcolor           white  ;; Light floor color to easily see agents
+  ]
+
+  ;; 1. Outer border
+  ask patches with [abs pxcor = max-pxcor or abs pycor = max-pycor] [
+    set pcolor black
+    set is-wall? true
+  ]
+
+  ;; 2. S-Shape Maze Walls to force indirect routing
+  ;; Top wall: goes from left edge to almost the right edge (leaves a gap on the right)
+  ask patches with [pycor = 5 and pxcor < max-pxcor - 3] [
+    set pcolor black
+    set is-wall? true
+  ]
+
+  ;; Bottom wall: goes from right edge to almost the left edge (leaves a gap on the left)
+  ask patches with [pycor = -5 and pxcor > min-pxcor + 3] [
+    set pcolor black
+    set is-wall? true
   ]
   
-
-  crt 100 [
-    setxy random-xcor random-ycor
-    set color green
-    set shape "person"
+  ask patches with [pycor < 0 and pycor >= -5 and pxcor = min-pxcor + 3] [
+    set pcolor black
+    set is-wall? true
   ]
-    reset-ticks
+
+  ;; 3. Room doors at the top
+  ask patch -10 (max-pycor - 1) [ set is-door? true  set pcolor red    set max-to-spawn 15  set start-time 10 ]
+  ask patch   0 (max-pycor - 1) [ set is-door? true  set pcolor blue   set max-to-spawn 25  set start-time 40 ]
+  ask patch  10 (max-pycor - 1) [ set is-door? true  set pcolor green  set max-to-spawn 20  set start-time 80 ]
+
+  ;; 4. Exit at the bottom right
+  ask patches with [pycor = min-pycor and pxcor >= max-pxcor - 4] [
+    set pcolor brown
+    set is-exit? true
+    set is-wall? false ;; Override the outer border wall here
+  ]
+
+  ;; Run the pathfinding map (your wavefront or the BFS)
+  calculate-distance-map
+  reset-ticks
 end
 
+to calculate-distance-map
+  ask patches [ set distance-to-exit 99999 ]
+  ask patches with [is-exit?] [ set distance-to-exit 0 ]
+
+  let changed? true
+  while [changed?] [
+    set changed? false
+    ask patches with [not is-wall?] [
+      let best min [distance-to-exit] of neighbors with [not is-wall?]
+      if best + 1 < distance-to-exit [
+        set distance-to-exit best + 1
+        set changed? true
+      ]
+    ]
+  ]
+end
+
+
 to go
-  ask turtles [
-    fd 1
+  ;; Reset reservations each tick
+  ask patches [ set reserved-by -1 ]
+
+  ;; --- SPAWN ---
+  ask patches with [is-door?] [
+    if ticks >= start-time and already-spawned < max-to-spawn [
+      if ticks mod 8 = 0 [
+        ;; Only spawn if the door patch itself is free
+        if not any? people-here [
+          let c pcolor
+          sprout 1 [
+            set breed people
+            set shape "person"
+            set color c
+            set size 0.9
+            set wait-counter 0
+          ]
+          set already-spawned already-spawned + 1
+        ]
+      ]
+    ]
+  ]
+
+  ;; --- MOVEMENT with reservation system ---
+  ;;
+  ;; Key idea: agents bid for their best next patch.
+  ;; Among all agents bidding for the same patch, only ONE wins —
+  ;; the one who has waited longest (highest wait-counter).
+  ;; Everyone else stays and increments their wait-counter.
+  ;; This guarantees liveness: the longest-waiting agent always wins,
+  ;; so no agent waits forever.
+
+  ;; Step 1 — every agent picks its desired next patch
+  let moves table:make   ;; patch -> [list of people who want it]
+
+  ask people [
+    ;; Check exit first
+    if [is-exit?] of patch-here [ die ]
+
+    let walkable neighbors with [not is-wall? and not any? people-here]
+    ;; Also consider current patch (stay in place counts as a candidate
+    ;; so agent always has at least one option)
+    let candidates (patch-set patch-here walkable)
+
+    let best-step min-one-of candidates [distance-to-exit]
+
+    ;; Register desire in the moves table
+    let key (list [pxcor] of best-step [pycor] of best-step)
+    let current-list []
+    if table:has-key? moves key [ set current-list table:get moves key ]
+    table:put moves key (lput self current-list)
+  ]
+
+;; Step 2 — resolve conflicts
+  foreach table:keys moves [ k ->
+    let contestants table:get moves k
+    let winner max-one-of (turtle-set contestants) [wait-counter]
     
-    if [pcolor] of patch-here = blue [
-      die
+    ;; 'patch' command takes two separate numbers, not a list
+    let target-patch patch (item 0 k) (item 1 k)
+
+    ask winner [
+      if target-patch != patch-here [
+        if not any? other people-on target-patch [
+          face target-patch
+          move-to target-patch
+          set wait-counter 0
+        ]
+      ]
     ]
     
-    rt random 90
+    ;; Losers wait (everyone in the list who wasn't the winner)
+    foreach contestants [ c ->
+      if c != winner [
+        ask c [ set wait-counter wait-counter + 1 ]
+      ]
+    ]
   ]
-  
-  tick
-end</code>
-  <widgets>
-    <view x="455" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-25" height="565" showTickCounter="true" patchSize="11.0" fontSize="14" wrappingAllowedY="false" width="565" tickCounterLabel="ticks" maxPycor="25" updateMode="1" maxPxcor="25" minPxcor="-25"></view>
-    <button x="5" y="15" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="95" display="setup">setup</button>
-    <button x="125" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-  </widgets>
-  <info><![CDATA[## WHAT IS IT?
 
-This model explores the stability of predator-prey ecosystems. Such a system is called unstable if it tends to result in extinction for one or more species involved.  In contrast, a system is stable if it tends to maintain itself over time, despite fluctuations in population sizes.
+  ;; Corridor enforcement — at most 1 agent per staircase tile
+  ;; Any extras on yellow patches (beyond the first) are bumped back
+  ask patches with [pcolor = yellow] [
+    if count people-here > 1 [
+      ;; Keep only the longest-waiting one on this tile
+      let keeper max-one-of people-here [wait-counter]
+      ask people-here with [self != keeper] [
+        ;; Move back to previous-best non-crowded floor-2 neighbor
+        let retreat one-of neighbors with [
+          not is-wall? and pycor >= 1 and not any? people-here
+        ]
+        if retreat != nobody [ move-to retreat ]
+        set wait-counter wait-counter + 1
+      ]
+    ]
+  ]
+
+  tick
+end]]></code>
+  <widgets>
+    <view x="368" wrappingAllowedX="true" y="10" frameRate="30.0" minPycor="-16" height="434" showTickCounter="true" patchSize="13.0" fontSize="10" wrappingAllowedY="true" width="434" tickCounterLabel="ticks" maxPycor="16" updateMode="0" maxPxcor="16" minPxcor="-16"></view>
+    <button x="25" y="20" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
+    <button x="95" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
+  </widgets>
+  <info>## WHAT IS IT?
+
+(a general understanding of what the model is trying to show or explain)
 
 ## HOW IT WORKS
 
-There are two main variations to this model.
-
-In the first variation, the "sheep-wolves" version, wolves and sheep wander randomly around the landscape, while the wolves look for sheep to prey on. Each step costs the wolves energy, and they must eat sheep in order to replenish their energy - when they run out of energy they die. To allow the population to continue, each wolf or sheep has a fixed probability of reproducing at each time step. In this variation, we model the grass as "infinite" so that sheep always have enough to eat, and we don't explicitly model the eating or growing of grass. As such, sheep don't either gain or lose energy by eating or moving. This variation produces interesting population dynamics, but is ultimately unstable. This variation of the model is particularly well-suited to interacting species in a rich nutrient environment, such as two strains of bacteria in a petri dish (Gause, 1934).
-
-The second variation, the "sheep-wolves-grass" version explicitly models grass (green) in addition to wolves and sheep. The behavior of the wolves is identical to the first variation, however this time the sheep must eat grass in order to maintain their energy - when they run out of energy they die. Once grass is eaten it will only regrow after a fixed amount of time. This variation is more complex than the first, but it is generally stable. It is a closer match to the classic Lotka Volterra population oscillation models. The classic LV models though assume the populations can take on real values, but in small populations these models underestimate extinctions and agent-based models such as the ones here, provide more realistic results. (See Wilensky & Rand, 2015; chapter 4).
-
-The construction of this model is described in two papers by Wilensky & Reisman (1998; 2006) referenced below.
+(what rules the agents use to create the overall behavior of the model)
 
 ## HOW TO USE IT
 
-1. Set the model-version chooser to "sheep-wolves-grass" to include grass eating and growth in the model, or to "sheep-wolves" to only include wolves (black) and sheep (white).
-2. Adjust the slider parameters (see below), or use the default settings.
-3. Press the SETUP button.
-4. Press the GO button to begin the simulation.
-5. Look at the monitors to see the current population sizes
-6. Look at the POPULATIONS plot to watch the populations fluctuate over time
-
-Parameters:
-MODEL-VERSION: Whether we model sheep wolves and grass or just sheep and wolves
-INITIAL-NUMBER-SHEEP: The initial size of sheep population
-INITIAL-NUMBER-WOLVES: The initial size of wolf population
-SHEEP-GAIN-FROM-FOOD: The amount of energy sheep get for every grass patch eaten (Note this is not used in the sheep-wolves model version)
-WOLF-GAIN-FROM-FOOD: The amount of energy wolves get for every sheep eaten
-SHEEP-REPRODUCE: The probability of a sheep reproducing at each time step
-WOLF-REPRODUCE: The probability of a wolf reproducing at each time step
-GRASS-REGROWTH-TIME: How long it takes for grass to regrow once it is eaten (Note this is not used in the sheep-wolves model version)
-SHOW-ENERGY?: Whether or not to show the energy of each animal as a number
-
-Notes:
-- one unit of energy is deducted for every step a wolf takes
-- when running the sheep-wolves-grass model version, one unit of energy is deducted for every step a sheep takes
-
-There are three monitors to show the populations of the wolves, sheep and grass and a populations plot to display the population values over time.
-
-If there are no wolves left and too many sheep, the model run stops.
+(how to use the model, including a description of each of the items in the Interface tab)
 
 ## THINGS TO NOTICE
 
-When running the sheep-wolves model variation, watch as the sheep and wolf populations fluctuate. Notice that increases and decreases in the sizes of each population are related. In what way are they related? What eventually happens?
-
-In the sheep-wolves-grass model variation, notice the green line added to the population plot representing fluctuations in the amount of grass. How do the sizes of the three populations appear to relate now? What is the explanation for this?
-
-Why do you suppose that some variations of the model might be stable while others are not?
+(suggested things for the user to notice while running the model)
 
 ## THINGS TO TRY
 
-Try adjusting the parameters under various settings. How sensitive is the stability of the model to the particular parameters?
-
-Can you find any parameters that generate a stable ecosystem in the sheep-wolves model variation?
-
-Try running the sheep-wolves-grass model variation, but setting INITIAL-NUMBER-WOLVES to 0. This gives a stable ecosystem with only sheep and grass. Why might this be stable while the variation with only sheep and wolves is not?
-
-Notice that under stable settings, the populations tend to fluctuate at a predictable pace. Can you find any parameters that will speed this up or slow it down?
+(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
 
 ## EXTENDING THE MODEL
 
-There are a number of ways to alter the model so that it will be stable with only wolves and sheep (no grass). Some will require new elements to be coded in or existing behaviors to be changed. Can you develop such a version?
-
-Try changing the reproduction rules -- for example, what would happen if reproduction depended on energy rather than being determined by a fixed probability?
-
-Can you modify the model so the sheep will flock?
-
-Can you modify the model so that wolves actively chase sheep?
+(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
 
 ## NETLOGO FEATURES
 
-Note the use of breeds to model two different kinds of "turtles": wolves and sheep. Note the use of patches to model grass.
-
-Note the use of the ONE-OF agentset reporter to select a random sheep to be eaten by a wolf.
-
-### BEHAVIORSPACE FEATURES
-
-For more information about BehaviorSpace and the features introduced in NetLogo 6.4.0 see the [documentation](https://ccl.northwestern.edu/netlogo/docs/behaviorspace.html).
-
-The “New BehaviorSpace Features” experiment illustrates some of the BehaviorSpace features introduced in NetLogo 6.4.0. You can open BehaviorSpace using the Tools -> BehaviorSpace menu item. Click the EDIT button to see the details of the experiment.
-
-Note the use of 3 repetitions, so there is enough data to calculate the standard deviation of metrics at steps where data is available for all repetitions.
-
-Note the use of metrics that return lists, which can be processed in the Lists and Statistics Outputs.
-
-Note the use of a reporter to conditionally record metrics every other tick.
-
-Note the use of pre experiment and post experiment commands to show the total elapsed time in the command center at the end of the experiment.
-
-Click the OK button to finish viewing/editing the experiment.
-
-The “Wolf Sheep Crossing” experiment illustrates the use of a reporter to capture interesting behavior, in this case the approximate periodicity of the simulation.
-
-The “BehaviorSpace run 3 experiments” experiment shows how to use the subexperiment syntax (introduced in NetLogo 6.4.0) to run three different experiments. If you uncheck UPDATE VIEW, check UPDATE PLOTS AND MONITORS, and select 1 for SIMULTANEOUS RUNS IN PARALLEL the plots will show you how the experiments differ significantly. The results are also written to the COMMAND CENTER. Since there are list reporters as metrics there is no value to using the lists output format. Since there is only one repetition, there is no value to using statistics output format.
-
-The “BehaviorSpace run 3 variable values per experiments” experiment is an example of how to use the subexperiment syntax to try multiple values of a variable non-combinatorially. Notice that default values need to be provided because the subexperiments only give the value of one of the variables explicitly.
-
-The “BehaviorSpace subset” experiment makes use of the subexperiment syntax to run multiple combinations on a single line. Compare this to the combinatorial combination of the same variable values in the experiment “BehaviorSpace combinatorial”.
-
-## THINGS TO TRY - BEHAVIORSPACE
-
-Use the EXPORT button to save the "New BehaviorSpace Features" experiment as an XML file. Then open the Wolf Sheep Stride Inheritance model and use the IMPORT button to add the "New BehaviorSpace Features" experiment to the model. Run the experiment in this model.
-
-Create your own experiments to explore how the different variables interact. What is the most dynamically stable combination you can find?
-
-With the "New BehaviorSpace Features" experiment explore the effect on the total time of varying your choices for  UPDATE VIEW, UPDATE PLOTS AND MONITORS, and SIMULTANEOUS RUNS IN PARALLEL. Which combination is the fastest? The slowest?
-
-
-### Reproducibility of Experiments
-
-The experiment “New BehaviorSpace Features Reproducible” produces the same numerical results every time it is run. You can see this by running the experiment twice and saving spreadsheet output with two different names. If you compare the files they will differ only in the line that includes the time at which the experiment was run.
-
-Contrast this to what happens when you do the same thing with the experiment “New BehaviorSpace Features”. In this case the results vary between runs because the NetLogo code includes primitives that introduce randomness, such as RANDOM, RANDOM-XCOR, RANDOM-YCOR and RANDOM-FLOAT. Sometimes it is desirable to have the same outcome each time the experiment is run, for example to show interesting behavior that only happens some of the time or to create a predictable lesson or demonstration. The output of the random functions is made reproducible by the line "random-seed (474 + behaviorspace-run-number)" in the setup command section.
-
-What is the effect of each of the following changes on multiple experiment runs:
-
-- Changing 474 to another number?
-- Removing the addition of behaviorspace-run-number?
-- Moving setup to before the random-seed line?
-- Replacing the random-seed line with new-seed?
-
-With the experiments “New BehaviorSpace Features” and “New BehaviorSpace Features Reproducible” explore whether output values change when you try the following actions:
-
-- Use the slider to vary `wolf-gain-from-food`
-- Use sliders to change other variables
-- Use the chooser to select `sheep-wolves`
-- Use the switch to turn on `show-energy?`
-
-Output values for the experiment “New BehaviorSpace Features Reproducible” remain unchanged because the value of all Interface variables is specified. Note that when you start a new experiment the variables section specifies all the slider variables, but not any chooser or switch variables.
+(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
 
 ## RELATED MODELS
 
-Look at Rabbits Grass Weeds for another model of interacting populations with different rules.
+(models in the NetLogo Models Library and elsewhere which are of related interest)
 
 ## CREDITS AND REFERENCES
 
-Wilensky, U. & Reisman, K. (1998). Connected Science: Learning Biology through Constructing and Testing Computational Theories -- an Embodied Modeling Approach. International Journal of Complex Systems, M. 234, pp. 1 - 12. (The Wolf-Sheep-Predation model is a slightly extended version of the model described in the paper.)
-
-Wilensky, U. & Reisman, K. (2006). Thinking like a Wolf, a Sheep or a Firefly: Learning Biology through Constructing and Testing Computational Theories -- an Embodied Modeling Approach. Cognition & Instruction, 24(2), pp. 171-209. http://ccl.northwestern.edu/papers/wolfsheep.pdf .
-
-Wilensky, U., & Rand, W. (2015). An introduction to agent-based modeling: Modeling natural, social and engineered complex systems with NetLogo. Cambridge, MA: MIT Press.
-
-Lotka, A. J. (1925). Elements of physical biology. New York: Dover.
-
-Volterra, V. (1926, October 16). Fluctuations in the abundance of a species considered mathematically. Nature, 118, 558–560.
-
-Gause, G. F. (1934). The struggle for existence. Baltimore: Williams & Wilkins.
-
-## HOW TO CITE
-
-If you mention this model or the NetLogo software in a publication, we ask that you include the citations below.
-
-For the model itself:
-
-* Wilensky, U. (1997).  NetLogo Wolf Sheep Predation model.  http://ccl.northwestern.edu/netlogo/models/WolfSheepPredation.  Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
-
-Please cite the NetLogo software as:
-
-* Wilensky, U. (1999). NetLogo. http://ccl.northwestern.edu/netlogo/. Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
-
-## COPYRIGHT AND LICENSE
-
-Copyright 1997 Uri Wilensky.
-
-![CC BY-NC-SA 3.0](http://ccl.northwestern.edu/images/creativecommons/byncsa.png)
-
-This model is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 3.0 License.  To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/3.0/ or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford, California 94305, USA.
-
-NetLogo itself is free software for non-commercial use under the terms of the GNU General Public License ([see full license information here](https://ccl.northwestern.edu/netlogo/docs/copyright.html)).
-
-To inquire about commercial licenses for either NetLogo or specific models from the models library, please contact netlogo-commercial-admin@ccl.northwestern.edu.
-
-This model was created as part of the project: CONNECTED MATHEMATICS: MAKING SENSE OF COMPLEX PHENOMENA THROUGH BUILDING OBJECT-BASED PARALLEL MODELS (OBPML).  The project gratefully acknowledges the support of the National Science Foundation (Applications of Advanced Technologies Program) -- grant numbers RED #9552950 and REC #9632612.
-
-This model was converted to NetLogo as part of the projects: PARTICIPATORY SIMULATIONS: NETWORK-BASED DESIGN FOR SYSTEMS LEARNING IN CLASSROOMS and/or INTEGRATED SIMULATION AND MODELING ENVIRONMENT. The project gratefully acknowledges the support of the National Science Foundation (REPP & ROLE programs) -- grant numbers REC #9814682 and REC-0126227. Converted from StarLogoT to NetLogo, 2000.
-
-<!-- 1997 2000 -->]]></info>
+(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+</info>
   <turtleShapes>
     <shape name="default" rotatable="true" editableColorIndex="0">
       <polygon color="-1920102913" filled="true" marked="true">
@@ -1047,306 +1064,5 @@ This model was converted to NetLogo as part of the projects: PARTICIPATORY SIMUL
       </indicator>
     </shape>
   </linkShapes>
-  <previewCommands>set model-version "sheep-wolves-grass"
-set show-energy? false
-setup
-repeat 75 [ go ]</previewCommands>
-  <experiments>
-    <experiment name="New BehaviorSpace Features" repetitions="3" sequentialRunOrder="true" runMetricsEveryStep="false" timeLimit="200">
-      <preExperiment>reset-timer</preExperiment>
-      <setup>setup</setup>
-      <go>go</go>
-      <postExperiment>show timer</postExperiment>
-      <runMetricsCondition>ticks mod 2 = 0</runMetricsCondition>
-      <metrics>
-        <metric>count sheep</metric>
-        <metric>count wolves</metric>
-        <metric>[ xcor ] of sheep</metric>
-        <metric>[ ycor ] of sheep</metric>
-        <metric>[ xcor ] of wolves</metric>
-        <metric>[ ycor ] of wolves</metric>
-      </metrics>
-      <subExperiments>
-        <subExperiment>
-          <steppedValueSet variable="wolf-gain-from-food" first="30" step="5" last="50"></steppedValueSet>
-        </subExperiment>
-      </subExperiments>
-    </experiment>
-    <experiment name="BehaviorSpace run 3 experiments" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false" timeLimit="1500">
-      <setup>setup
-print (word "sheep-reproduce: " sheep-reproduce ", wolf-reproduce: " wolf-reproduce)
-print (word "sheep-gain-from-food: " sheep-gain-from-food ", wolf-gain-from-food: " wolf-gain-from-food)</setup>
-      <go>go</go>
-      <postRun>print (word "sheep: " count sheep ", wolves: " count wolves)
-print ""
-wait 1</postRun>
-      <runMetricsCondition>ticks mod 10 = 0</runMetricsCondition>
-      <metrics>
-        <metric>count sheep</metric>
-        <metric>count wolves</metric>
-        <metric>count grass</metric>
-      </metrics>
-      <constants>
-        <enumeratedValueSet variable="model-version">
-          <value value="&quot;sheep-wolves-grass&quot;"></value>
-        </enumeratedValueSet>
-      </constants>
-      <subExperiments>
-        <subExperiment>
-          <enumeratedValueSet variable="sheep-reproduce">
-            <value value="1"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="sheep-gain-from-food">
-            <value value="1"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-reproduce">
-            <value value="2"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-gain-from-food">
-            <value value="10"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-        <subExperiment>
-          <enumeratedValueSet variable="sheep-reproduce">
-            <value value="6"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="sheep-gain-from-food">
-            <value value="8"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-reproduce">
-            <value value="5"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-gain-from-food">
-            <value value="20"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-        <subExperiment>
-          <enumeratedValueSet variable="sheep-reproduce">
-            <value value="20"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="sheep-gain-from-food">
-            <value value="15"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-reproduce">
-            <value value="15"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-gain-from-food">
-            <value value="30"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-      </subExperiments>
-    </experiment>
-    <experiment name="BehaviorSpace run 3 variable values per experiments" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false" timeLimit="1500">
-      <setup>setup
-print (word "sheep-reproduce: " sheep-reproduce ", wolf-reproduce: " wolf-reproduce)
-print (word "sheep-gain-from-food: " sheep-gain-from-food ", wolf-gain-from-food: " wolf-gain-from-food)</setup>
-      <go>go</go>
-      <postRun>print (word "sheep: " count sheep ", wolves: " count wolves)
-print ""
-wait 1</postRun>
-      <runMetricsCondition>ticks mod 10 = 0</runMetricsCondition>
-      <metrics>
-        <metric>count sheep</metric>
-        <metric>count wolves</metric>
-        <metric>count grass</metric>
-      </metrics>
-      <constants>
-        <enumeratedValueSet variable="model-version">
-          <value value="&quot;sheep-wolves-grass&quot;"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="sheep-reproduce">
-          <value value="4"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="wolf-reproduce">
-          <value value="2"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="sheep-gain-from-food">
-          <value value="4"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="wolf-gain-from-food">
-          <value value="20"></value>
-        </enumeratedValueSet>
-      </constants>
-      <subExperiments>
-        <subExperiment>
-          <enumeratedValueSet variable="sheep-reproduce">
-            <value value="1"></value>
-            <value value="6"></value>
-            <value value="20"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-        <subExperiment>
-          <enumeratedValueSet variable="wolf-reproduce">
-            <value value="2"></value>
-            <value value="7"></value>
-            <value value="15"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-        <subExperiment>
-          <enumeratedValueSet variable="sheep-gain-from-food">
-            <value value="1"></value>
-            <value value="8"></value>
-            <value value="15"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-        <subExperiment>
-          <enumeratedValueSet variable="wolf-gain-from-food">
-            <value value="10"></value>
-            <value value="20"></value>
-            <value value="30"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-      </subExperiments>
-    </experiment>
-    <experiment name="BehaviorSpace subset" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false" timeLimit="1500">
-      <setup>setup</setup>
-      <go>go</go>
-      <postRun>wait .5</postRun>
-      <runMetricsCondition>ticks mod 10 = 0</runMetricsCondition>
-      <metrics>
-        <metric>count sheep</metric>
-        <metric>count wolves</metric>
-        <metric>count grass</metric>
-      </metrics>
-      <constants>
-        <enumeratedValueSet variable="model-version">
-          <value value="&quot;sheep-wolves-grass&quot;"></value>
-        </enumeratedValueSet>
-      </constants>
-      <subExperiments>
-        <subExperiment>
-          <enumeratedValueSet variable="wolf-reproduce">
-            <value value="3"></value>
-            <value value="5"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-gain-from-food">
-            <value value="30"></value>
-            <value value="40"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-        <subExperiment>
-          <enumeratedValueSet variable="wolf-reproduce">
-            <value value="10"></value>
-            <value value="15"></value>
-          </enumeratedValueSet>
-          <enumeratedValueSet variable="wolf-gain-from-food">
-            <value value="10"></value>
-            <value value="15"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-      </subExperiments>
-    </experiment>
-    <experiment name="BehaviorSpace combinatorial" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false" timeLimit="1500">
-      <setup>setup</setup>
-      <go>go</go>
-      <postRun>wait .5</postRun>
-      <runMetricsCondition>ticks mod 10 = 0</runMetricsCondition>
-      <metrics>
-        <metric>count sheep</metric>
-        <metric>count wolves</metric>
-        <metric>count grass</metric>
-      </metrics>
-      <constants>
-        <enumeratedValueSet variable="model-version">
-          <value value="&quot;sheep-wolves-grass&quot;"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="wolf-reproduce">
-          <value value="3"></value>
-          <value value="5"></value>
-          <value value="10"></value>
-          <value value="15"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="wolf-gain-from-food">
-          <value value="10"></value>
-          <value value="15"></value>
-          <value value="30"></value>
-          <value value="40"></value>
-        </enumeratedValueSet>
-      </constants>
-    </experiment>
-    <experiment name="Wolf Sheep Crossing" repetitions="4" sequentialRunOrder="true" runMetricsEveryStep="false" timeLimit="1500">
-      <setup>setup</setup>
-      <go>go</go>
-      <runMetricsCondition>count sheep = count wolves</runMetricsCondition>
-      <metrics>
-        <metric>count sheep</metric>
-        <metric>count wolves</metric>
-      </metrics>
-      <constants>
-        <enumeratedValueSet variable="wolf-gain-from-food">
-          <value value="20"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="show-energy?">
-          <value value="false"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="wolf-reproduce">
-          <value value="5"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="initial-number-wolves">
-          <value value="50"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="initial-number-sheep">
-          <value value="100"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="model-version">
-          <value value="&quot;sheep-wolves-grass&quot;"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="sheep-gain-from-food">
-          <value value="4"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="grass-regrowth-time">
-          <value value="30"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="sheep-reproduce">
-          <value value="4"></value>
-        </enumeratedValueSet>
-      </constants>
-    </experiment>
-    <experiment name="New BehaviorSpace Features reproducible" repetitions="3" sequentialRunOrder="true" runMetricsEveryStep="false" timeLimit="200">
-      <preExperiment>reset-timer</preExperiment>
-      <setup>random-seed (474 + behaviorspace-run-number)
-
-setup</setup>
-      <go>go</go>
-      <postExperiment>show timer</postExperiment>
-      <runMetricsCondition>ticks mod 2 = 0</runMetricsCondition>
-      <metrics>
-        <metric>count sheep</metric>
-        <metric>count wolves</metric>
-        <metric>[ xcor ] of sheep</metric>
-        <metric>[ ycor ] of sheep</metric>
-        <metric>[ xcor ] of wolves</metric>
-        <metric>[ ycor ] of wolves</metric>
-      </metrics>
-      <constants>
-        <enumeratedValueSet variable="model-version">
-          <value value="&quot;sheep-wolves-grass&quot;"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="wolf-gain-from-food">
-          <value value="20"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="show-energy?">
-          <value value="false"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="wolf-reproduce">
-          <value value="5"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="initial-number-wolves">
-          <value value="50"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="initial-number-sheep">
-          <value value="100"></value>
-        </enumeratedValueSet>
-      </constants>
-      <subExperiments>
-        <subExperiment>
-          <enumeratedValueSet variable="wolf-gain-from-food">
-            <value value="10"></value>
-            <value value="20"></value>
-            <value value="30"></value>
-          </enumeratedValueSet>
-        </subExperiment>
-      </subExperiments>
-    </experiment>
-  </experiments>
+  <previewCommands>setup repeat 75 [ go ]</previewCommands>
 </model>
