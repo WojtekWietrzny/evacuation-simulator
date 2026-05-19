@@ -8,6 +8,7 @@ patches-own [
   is-alt-exit?
   is-late-exit?
   is-spawner?
+  target-location    ;; Either "die" or a list [px py] to teleport to
   dist-primary       ;; Distance to main exits only
   dist-with-alt      ;; Distance to main + alternative exits
   dist-with-late     ;; Distance to main + late-opening exits
@@ -28,9 +29,14 @@ to setup
   clear-all
   
   ;; --- CONFIGURATION AREA ---
-  let exit-coords [ [-24 20] ] 
-  let alt-exit-coords [ ]   ;; ADD YOUR ALT EXITS HERE
-  let late-exit-coords [ ]  ;; ADD YOUR LATE EXITS HERE
+  ;; Format: [px py "type" "target"]
+  ;; "type" can be: "primary", "alt", "late"
+  ;; "target" can be: "die" OR a list [target-px target-py]
+  let exit-config [
+    [-24 20 "primary" "die"]
+    ;; Example Teleport: [-10 -10 "alt" [50 50]] 
+    ;; Example Late Die: [10 10 "late" "die"]
+  ]
   
   let spawner-data [ 
     [-64 3 10 0] [-66 -17 10 20] [-46 -17 10 40] [-23 -17 10 60] 
@@ -46,6 +52,8 @@ to setup
     set is-spawner? false
     set is-alt-exit? false
     set is-late-exit? false
+    set is-exit? false
+    set target-location 0
     set already-spawned 0
     set max-to-spawn 0
     set start-time 0
@@ -53,45 +61,37 @@ to setup
     ;; Simplify colors from image
     ifelse pcolor < 9 [
       set is-wall? true
-      set is-exit? false
       set pcolor black
     ] [
       set is-wall? false
-      set is-exit? false
       set pcolor white
     ]
   ]
 
-  ;; 3. Set Exit Types
-  ;; Main Exits
-  foreach exit-coords [ coords ->
-    ask patch (item 0 coords) (item 1 coords) [
-      ask patches in-radius (scale-factor / 2) [ 
-        set pcolor yellow 
-        set is-exit? true
+  ;; 3. Set Exits from Config
+  foreach exit-config [ config ->
+    let px (item 0 config)
+    let py (item 1 config)
+    let etype (item 2 config)
+    let etarget (item 3 config)
+    
+    ask patch px py [
+      ask patches in-radius (scale-factor / 2) [
         set is-wall? false
-      ]
-    ]
-  ]
-  
-  ;; Alternative Exits
-  foreach alt-exit-coords [ coords ->
-    ask patch (item 0 coords) (item 1 coords) [
-      ask patches in-radius (scale-factor / 2) [ 
-        set pcolor cyan ;; Distinct color for alt exits
-        set is-alt-exit? true
-        set is-wall? false
-      ]
-    ]
-  ]
-  
-  ;; Late Exits
-  foreach late-exit-coords [ coords ->
-    ask patch (item 0 coords) (item 1 coords) [
-      ask patches in-radius (scale-factor / 2) [ 
-        set pcolor grey ;; Hidden/Closed color
-        set is-late-exit? true
-        set is-wall? false
+        set target-location etarget
+        
+        if etype = "primary" [ 
+          set is-exit? true 
+          set pcolor yellow 
+        ]
+        if etype = "alt" [ 
+          set is-alt-exit? true 
+          set pcolor cyan 
+        ]
+        if etype = "late" [ 
+          set is-late-exit? true 
+          set pcolor grey 
+        ]
       ]
     ]
   ]
@@ -169,8 +169,8 @@ to go
   ;; 1. Delayed Spawning Logic
   ask patches with [is-spawner?] [
     if ticks >= start-time and already-spawned < max-to-spawn [
-      ;; Spawn one agent every few ticks if the patch is clear
-      if ticks mod 5 = 0 and not any? people-here [
+      ;; Spawn one agent every few ticks if the space is clear (respecting personal-space)
+      if ticks mod 5 = 0 and not any? people-on (patches in-radius personal-space) [
         sprout 1 [
           set breed people
           set shape "person"
@@ -235,13 +235,25 @@ to go
 
       ask winner [
         if target-patch != patch-here [
-          ;; Check if the spot is actually clear
-          if not any? other people-on target-patch [
+          ;; Check if the spot is actually clear + enough personal space
+          if not any? other people-on ([patches in-radius personal-space] of target-patch) [
             face target-patch
             move-to target-patch
             set wait-counter 0
-            ;; Escape Condition: Any active exit
-            if is-exit? or is-alt-exit? or (is-late-exit? and ticks >= late-exit-opening-tick) [ die ] 
+            ;; Escape or Teleport Condition
+            let is-active-late (is-late-exit? and ticks >= late-exit-opening-tick)
+            if is-exit? or is-alt-exit? or is-active-late [
+              let target [target-location] of target-patch
+              ifelse target = "die" [
+                die
+              ] [
+                ;; Teleport Logic: target is [px py]
+                set xcor (item 0 target)
+                set ycor (item 1 target)
+                ;; Optional: reset wait-counter or face a direction
+                set wait-counter 0
+              ]
+            ] 
           ]
         ]
       ]
@@ -254,7 +266,7 @@ to go
   tick
 end]]></code>
   <widgets>
-    <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-300" height="1802" showTickCounter="true" patchSize="3.0" fontSize="10" wrappingAllowedY="false" width="608" tickCounterLabel="ticks" maxPycor="300" updateMode="1" maxPxcor="100" minPxcor="-100"></view>
+    <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-300" height="1802" showTickCounter="true" patchSize="3.0" fontSize="10" wrappingAllowedY="false" width="608" tickCounterLabel="ticks" maxPycor="300" updateMode="0" maxPxcor="100" minPxcor="-100"></view>
     <button x="15" y="30" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="90" y="30" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
     <slider x="15" step="1" y="85" max="100" width="250" display="ticks-per-move" height="50" min="0" direction="Horizontal" default="25.0" variable="ticks-per-move"></slider>
@@ -262,6 +274,7 @@ end]]></code>
     <slider x="15" step="1" y="205" max="10" width="250" display="wall-thickness" height="50" min="0" direction="Horizontal" default="6.0" variable="wall-thickness"></slider>
     <slider x="15" step="1" y="265" max="100" width="250" display="knowledge-of-alternative-exits" height="50" min="0" direction="Horizontal" default="20.0" variable="knowledge-of-alternative-exits"></slider>
     <slider x="15" step="1" y="325" max="2000" width="250" display="late-exit-opening-tick" height="50" min="0" direction="Horizontal" default="500.0" variable="late-exit-opening-tick"></slider>
+    <slider x="15" step="0.1" y="385" max="5" width="250" display="personal-space" height="50" min="0" direction="Horizontal" default="0.5" variable="personal-space"></slider>
   </widgets>
   <info>## WHAT IS IT?
 
