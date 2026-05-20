@@ -219,11 +219,12 @@ to go
 
   ;; 2. Stop if everyone is out and spawners are done
   if not any? people and all? patches with [is-spawner?] [already-spawned >= max-to-spawn] [ 
+    export-plot "Total Evacuated Agents" (word "recordings/evacuation_plot_" ticks ".png")
     ifelse record-movie? and vid:recorder-status = "recording" [
       vid:save-recording (word "recordings/evacuation_" ticks ".mp4")
-      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nMovie saved in recordings/ directory.")
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nMovie and Plot saved in recordings/ directory.")
     ] [
-      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.")
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nPlot saved in recordings/ directory.")
     ]
     stop 
   ]
