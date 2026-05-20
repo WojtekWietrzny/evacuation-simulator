@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.3" snapToGrid="true">
-  <code><![CDATA[extensions [ table ]
+  <code><![CDATA[extensions [ table vid ]
 
 patches-own [
   is-wall?
@@ -26,6 +26,9 @@ people-own [
 ]
 
 to setup
+  if record-movie? and vid:recorder-status = "recording" [
+    vid:reset-recorder
+  ]
   clear-all
   
   ;; --- CONFIGURATION AREA ---
@@ -37,6 +40,10 @@ to setup
     [1 96 "primary" [-1 -46]]
     [0 -41 "primary" [1 -188]]
     [-90 -165 "primary" "die"]
+    [5 -176 "late" "die"]
+    [66 174 "alt" [59 53]] 
+    [65 48 "alt" [68 -89]] 
+    [75 -91 "alt" [85 -237]] 
     ;; Example Teleport: [-10 -10 "alt" [50 50]] 
     ;; Example Late Die: [10 10 "late" "die"]
   ]
@@ -131,6 +138,11 @@ to setup
 
   calculate-all-distance-maps
   reset-ticks
+  if record-movie? [
+    vid:start-recorder
+    vid:record-view
+  ]
+  user-message "Setup Completed!"
 end
 
 to calculate-all-distance-maps
@@ -154,27 +166,28 @@ end
 to calculate-flood-fill [sources]
   ask patches [ set temp-dist 99999 ]
   ask sources [ set temp-dist 0 ]
-
-  let changed? true
-  while [changed?] [
-    set changed? false
-    ask patches with [not is-wall?] [
+  
+  let frontier sources
+  while [any? frontier] [
+    let next-frontier no-patches
+    ask frontier [
       let my-dist temp-dist
-      let new-dist my-dist
       
       ask neighbors4 with [not is-wall?] [
-        if temp-dist + 10 < new-dist [ set new-dist temp-dist + 10 ]
+        if my-dist + 10 < temp-dist [
+          set temp-dist my-dist + 10
+          set next-frontier (patch-set next-frontier self)
+        ]
       ]
       
-      ask neighbors with [not is-wall? and not member? self [neighbors4] of myself] [
-        if temp-dist + 15 < new-dist [ set new-dist temp-dist + 15 ]
-      ]
-      
-      if new-dist < my-dist [
-        set temp-dist new-dist
-        set changed? true
+      ask neighbors with [not is-wall? and pxcor != [pxcor] of myself and pycor != [pycor] of myself] [
+        if my-dist + 15 < temp-dist [
+          set temp-dist my-dist + 15
+          set next-frontier (patch-set next-frontier self)
+        ]
       ]
     ]
+    set frontier next-frontier
   ]
 end
 
@@ -206,7 +219,13 @@ to go
 
   ;; 2. Stop if everyone is out and spawners are done
   if not any? people and all? patches with [is-spawner?] [already-spawned >= max-to-spawn] [ 
-    user-message (word "Evacuation Complete!\nTime: " ticks " ticks.")
+    export-plot "Total Evacuated Agents" (word "recordings/evacuation_plot_" ticks ".png")
+    ifelse record-movie? and vid:recorder-status = "recording" [
+      vid:save-recording (word "recordings/evacuation_" ticks ".mp4")
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nMovie and Plot saved in recordings/ directory.")
+    ] [
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nPlot saved in recordings/ directory.")
+    ]
     stop 
   ]
 
@@ -282,17 +301,29 @@ to go
     ]
   ]
   tick
+  if record-movie? and vid:recorder-status = "recording" [
+    vid:record-view
+  ]
 end]]></code>
   <widgets>
     <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-300" height="1802" showTickCounter="true" patchSize="3.0" fontSize="10" wrappingAllowedY="false" width="608" tickCounterLabel="ticks" maxPycor="300" updateMode="0" maxPxcor="100" minPxcor="-100"></view>
     <button x="15" y="30" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="90" y="30" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <slider x="15" step="1" y="85" max="100" width="250" display="ticks-per-move" height="50" min="0" direction="Horizontal" default="25.0" variable="ticks-per-move"></slider>
-    <slider x="15" step="1" y="145" max="10" width="250" display="scale-factor" height="50" min="0" direction="Horizontal" default="3.0" variable="scale-factor"></slider>
+    <switch x="160" y="30" height="40" on="false" variable="record-movie?" display="record-movie?" width="120" sizeVersion="0"></switch>
+    <slider x="15" step="1" y="85" max="100" width="250" display="ticks-per-move" height="50" min="0" direction="Horizontal" default="20.0" variable="ticks-per-move"></slider>
+    <slider x="15" step="1" y="145" max="10" width="250" display="scale-factor" height="50" min="0" direction="Horizontal" default="4.0" variable="scale-factor"></slider>
     <slider x="15" step="1" y="205" max="10" width="250" display="wall-thickness" height="50" min="0" direction="Horizontal" default="6.0" variable="wall-thickness"></slider>
     <slider x="15" step="1" y="265" max="100" width="250" display="knowledge-of-alternative-exits" height="50" min="0" direction="Horizontal" default="20.0" variable="knowledge-of-alternative-exits"></slider>
-    <slider x="15" step="1" y="325" max="2000" width="250" display="late-exit-opening-tick" height="50" min="0" direction="Horizontal" default="500.0" variable="late-exit-opening-tick"></slider>
-    <slider x="15" step="0.1" y="385" max="5" width="250" display="personal-space" height="50" min="0" direction="Horizontal" default="0.5" variable="personal-space"></slider>
+    <slider x="15" step="1" y="325" max="15000" width="250" display="late-exit-opening-tick" height="50" min="0" direction="Horizontal" default="5000.0" variable="late-exit-opening-tick"></slider>
+    <slider x="15" step="0.1" y="385" max="5" width="250" display="personal-space" height="50" min="0" direction="Horizontal" default="0.2" variable="personal-space"></slider>
+    <plot x="15" autoPlotX="true" yMax="10.0" autoPlotY="true" yAxis="agents" y="450" xMin="0.0" height="200" legend="false" xMax="100.0" yMin="0.0" width="250" xAxis="ticks" display="Total Evacuated Agents">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="evacuated" color="-65536" legend="true">
+        <setup></setup>
+        <update>plotxy ticks ((sum [already-spawned] of patches with [is-spawner?]) - count people)</update>
+      </pen>
+    </plot>
   </widgets>
   <info>## WHAT IS IT?
 
