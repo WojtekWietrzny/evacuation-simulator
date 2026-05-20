@@ -300,7 +300,7 @@ to go
     ]
   ]
   tick
-  if record-movie? and vid:recorder-status = "recording" and ticks mod ticks-per-move = 0 [
+  if record-movie? and vid:recorder-status = "recording" [
     vid:record-view
   ]
 end]]></code>
@@ -308,9 +308,9 @@ end]]></code>
     <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-300" height="1802" showTickCounter="true" patchSize="3.0" fontSize="10" wrappingAllowedY="false" width="608" tickCounterLabel="ticks" maxPycor="300" updateMode="0" maxPxcor="100" minPxcor="-100"></view>
     <button x="15" y="30" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="90" y="30" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <switch x="160" y="30" height="40" on="false" variable="record-movie?" display="Record Movie" width="120" sizeVersion="0"></switch>
-    <slider x="15" step="1" y="85" max="100" width="250" display="ticks-per-move" height="50" min="0" direction="Horizontal" default="25.0" variable="ticks-per-move"></slider>
-    <slider x="15" step="1" y="145" max="10" width="250" display="scale-factor" height="50" min="0" direction="Horizontal" default="3.0" variable="scale-factor"></slider>
+    <switch x="160" y="30" height="40" on="false" variable="record-movie?" display="record-movie?" width="120" sizeVersion="0"></switch>
+    <slider x="15" step="1" y="85" max="100" width="250" display="ticks-per-move" height="50" min="0" direction="Horizontal" default="20.0" variable="ticks-per-move"></slider>
+    <slider x="15" step="1" y="145" max="10" width="250" display="scale-factor" height="50" min="0" direction="Horizontal" default="4.0" variable="scale-factor"></slider>
     <slider x="15" step="1" y="205" max="10" width="250" display="wall-thickness" height="50" min="0" direction="Horizontal" default="6.0" variable="wall-thickness"></slider>
     <slider x="15" step="1" y="265" max="100" width="250" display="knowledge-of-alternative-exits" height="50" min="0" direction="Horizontal" default="20.0" variable="knowledge-of-alternative-exits"></slider>
     <slider x="15" step="1" y="325" max="15000" width="250" display="late-exit-opening-tick" height="50" min="0" direction="Horizontal" default="5000.0" variable="late-exit-opening-tick"></slider>
