@@ -1,0 +1,12 @@
+# Python virtual environments and caches
+.venv/
+__pycache__/
+*.pyc
+
+# OS metadata
+.DS_Store
+
+# Evacuation Simulation Outputs
+map_preparation/recordings/
+map_preparation/plots/
+map_preparation/simulation_runs/

@@ -148,7 +148,7 @@ to setup
     vid:start-recorder
     vid:record-view
   ]
-  user-message "Setup Completed!"
+  ;; user-message "Setup Completed!"
 end
 
 to calculate-all-distance-maps
@@ -225,12 +225,12 @@ to go
 
   ;; 2. Stop if everyone is out and spawners are done
   if not any? people and all? patches with [is-spawner?] [already-spawned >= max-to-spawn] [ 
-    export-plot "Total Evacuated Agents" (word "recordings/evacuation_plot_" ticks ".png")
+    export-plot "Total Evacuated Agents" (word "simulation_runs/evacuation_plot_" date-and-time ".csv")
     ifelse record-movie? and vid:recorder-status = "recording" [
       vid:save-recording (word "recordings/evacuation_" ticks ".mp4")
-      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nMovie and Plot saved in recordings/ directory.")
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nMovie saved in recordings/ and Plot data saved in simulation_runs/ directory.")
     ] [
-      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nPlot saved in recordings/ directory.")
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nPlot data saved in simulation_runs/ directory.")
     ]
     stop 
   ]
