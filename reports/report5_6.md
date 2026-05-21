@@ -1,4 +1,4 @@
-# Raport 6 – Gotowa symulacja ewakuacji D17 w NetLogo
+# Raport 5 - 6 – Gotowa symulacja ewakuacji D17 w NetLogo
 
 ## Dokońcozna mapa D17
 
