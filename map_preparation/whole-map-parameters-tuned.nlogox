@@ -17,12 +17,14 @@ patches-own [
   max-to-spawn
   already-spawned
   start-time
+  is-staircase?
 ]
 
 breed [people person]
 people-own [ 
   wait-counter 
-  knows-alternatives? 
+  knows-alternatives?
+  staircase-skip?
 ]
 
 to setup
@@ -36,15 +38,15 @@ to setup
   ;; "type" can be: "primary", "alt", "late"
   ;; "target" can be: "die" OR a list [target-px target-py]
   let exit-config [
-    [0 222 "primary" [-1 89]]
+    [0 227 "primary" [-1 89]]
     [1 96 "primary" [-1 -46]]
     [0 -41 "primary" [1 -188]]
     [-90 -165 "primary" "die"]
-    [5 -176 "primary" "die"]
+    [5 -181 "late" "die"]
     [87 -237 "late" "die"]
-    [66 174 "alt" [59 53]] 
+    [66 176 "alt" [59 53]] 
     [65 48 "alt" [68 -89]] 
-    [75 -91 "alt" [82 -232]] 
+    [75 -91 "alt" [80 -238]] 
     ;; Example Teleport: [-10 -10 "alt" [50 50]] 
     ;; Example Late Die: [10 10 "late" "die"]
   ]
@@ -76,9 +78,44 @@ to setup
   ;; ---------------------------
 
   ;; 1. Load the Image for Walls
-  import-pcolors "manual_map.png"
+  import-pcolors "manual_map_stairs.png"
+  
+  let additional-walls-config [
+    [-13 102]
+    [-18 222]
+    [-13 220]
+    [-14 229]
+    [-10 231]
+    [-19 93]
+    [-14 91]
+    [-25 101]
+    [2 90]
+    [6 96]
+    [5 223]
+    [-3 223]
+    [-2 222]
+    [-5 224]
+    [-6 225]
+    [-10 225]
+    [-11 227]
+    [-8 230]
+    [2 -49]
+    [5 -42]
+    [-14 -38]
+    [-12 -36]
+    [-10 -191]
+    [-8 -192]
+    [2 -188]
+    [-1 -187]
+    [-4 -187]
+    [-6 -186]
+    [-9 -184]
+    [-10 -183]
+    [-11 -180]
+    ;; Tutaj możesz dopisywać kolejne współrzędne nowych ścian
+  ]
 
-  ;; 2. Initialize Patches
+;; 2. Initialize Patches
   ask patches [
     set is-spawner? false
     set is-alt-exit? false
@@ -89,13 +126,20 @@ to setup
     set max-to-spawn 0
     set start-time 0
     
-    ;; Simplify colors from image
     ifelse pcolor < 9 [
       set is-wall? true
+      set is-staircase? false
       set pcolor black
     ] [
-      set is-wall? false
-      set pcolor white
+      ifelse pcolor >= 21 and pcolor <= 29 [
+        set is-staircase? true
+        set is-wall? false
+        set pcolor orange 
+      ] [
+        set is-wall? false
+        set is-staircase? false
+        set pcolor white
+      ]
     ]
   ]
 
@@ -138,6 +182,19 @@ to setup
       ask patches in-radius (scale-factor / 2) [
         set pcolor green
         set is-wall? false
+      ]
+    ]
+  ]
+  
+  foreach additional-walls-config [ config ->
+    let px (item 0 config)
+    let py (item 1 config)
+    
+    ask patch px py [
+      ask patches in-radius (scale-factor / 3) [
+        set is-wall? true
+        set is-staircase? false
+        set pcolor black
       ]
     ]
   ]
@@ -214,6 +271,7 @@ to go
           set color blue
           set size scale-factor ;; Size matches your slider
           set wait-counter 0
+          set staircase-skip? false ;;
           ;; Agent Knowledge Assignment
           set knows-alternatives? (random 100 < knowledge-of-alternative-exits)
           if knows-alternatives? [ set color cyan ] ;; Visual indicator for knowledge
@@ -240,6 +298,16 @@ to go
     let moves table:make   
 
     ask people [
+      ifelse [is-staircase?] of patch-here [
+        set staircase-skip? not staircase-skip?
+        if staircase-skip? [
+          set wait-counter wait-counter + 1 ;; Zwiększamy licznik, by nie tracił pierwszeństwa przy tłoku
+          stop ;; Przerywa ruch w tym ticku dla tego konkretnego agenta
+        ]
+      ] [
+        set staircase-skip? false
+      ]
+      
       let best-step patch-here 
       
       ;; PATHFINDING LOGIC: Switch between 4 distance maps
@@ -320,7 +388,7 @@ end]]></code>
     <slider x="15" step="1" y="145" max="10" width="250" display="scale-factor" height="50" min="0" direction="Horizontal" default="4.0" variable="scale-factor"></slider>
     <slider x="15" step="1" y="205" max="10" width="250" display="wall-thickness" height="50" min="0" direction="Horizontal" default="6.0" variable="wall-thickness"></slider>
     <slider x="15" step="1" y="265" max="100" width="250" display="knowledge-of-alternative-exits" height="50" min="0" direction="Horizontal" default="20.0" variable="knowledge-of-alternative-exits"></slider>
-    <slider x="15" step="1" y="325" max="15000" width="250" display="late-exit-opening-tick" height="50" min="0" direction="Horizontal" default="2000.0" variable="late-exit-opening-tick"></slider>
+    <slider x="15" step="1" y="325" max="15000" width="250" display="late-exit-opening-tick" height="50" min="0" direction="Horizontal" default="25900.0" variable="late-exit-opening-tick"></slider>
     <slider x="15" step="0.1" y="385" max="5" width="250" display="personal-space" height="50" min="0" direction="Horizontal" default="0.2" variable="personal-space"></slider>
     <plot x="15" autoPlotX="true" yMax="10.0" autoPlotY="true" yAxis="agents" y="450" xMin="0.0" height="200" legend="false" xMax="100.0" yMin="0.0" width="250" xAxis="ticks" display="Total Evacuated Agents">
       <setup></setup>
