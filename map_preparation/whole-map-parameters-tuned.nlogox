@@ -112,6 +112,8 @@ to setup
     [-9 -184]
     [-10 -183]
     [-11 -180]
+    [-53 236]
+    [-54 107]
     ;; Tutaj możesz dopisywać kolejne współrzędne nowych ścian
   ]
 
@@ -311,25 +313,55 @@ to go
       let best-step patch-here 
       
       ;; PATHFINDING LOGIC: Switch between 4 distance maps
+let on-staircase? [is-staircase?] of patch-here
+
       ifelse ticks < late-exit-opening-tick [
         ifelse knows-alternatives? [
           let my-dist [dist-with-alt] of patch-here
-          let walkable neighbors with [not is-wall? and dist-with-alt < my-dist]
-          if any? walkable [ set best-step min-one-of walkable [dist-with-alt] ]
+          ifelse on-staircase? [
+            let walkable neighbors with [not is-wall? and dist-with-alt <= my-dist + 10]
+            if any? walkable [
+              set best-step min-one-of walkable [dist-with-alt + (count people-on self * 12) + random 25]
+            ]
+          ] [
+            let walkable neighbors with [not is-wall? and dist-with-alt < my-dist]
+            if any? walkable [ set best-step min-one-of walkable [dist-with-alt] ]
+          ]
         ] [
           let my-dist [dist-primary] of patch-here
-          let walkable neighbors with [not is-wall? and dist-primary < my-dist]
-          if any? walkable [ set best-step min-one-of walkable [dist-primary] ]
+          ifelse on-staircase? [
+            let walkable neighbors with [not is-wall? and dist-primary <= my-dist + 10]
+            if any? walkable [
+              set best-step min-one-of walkable [dist-primary + (count people-on self * 12) + random 25]
+            ]
+          ] [
+            let walkable neighbors with [not is-wall? and dist-primary < my-dist]
+            if any? walkable [ set best-step min-one-of walkable [dist-primary] ]
+          ]
         ]
       ] [
         ifelse knows-alternatives? [
           let my-dist [dist-with-all] of patch-here
-          let walkable neighbors with [not is-wall? and dist-with-all < my-dist]
-          if any? walkable [ set best-step min-one-of walkable [dist-with-all] ]
+          ifelse on-staircase? [
+            let walkable neighbors with [not is-wall? and dist-with-all <= my-dist + 10]
+            if any? walkable [
+              set best-step min-one-of walkable [dist-with-all + (count people-on self * 12) + random 25]
+            ]
+          ] [
+            let walkable neighbors with [not is-wall? and dist-with-all < my-dist]
+            if any? walkable [ set best-step min-one-of walkable [dist-with-all] ]
+          ]
         ] [
           let my-dist [dist-with-late] of patch-here
-          let walkable neighbors with [not is-wall? and dist-with-late < my-dist]
-          if any? walkable [ set best-step min-one-of walkable [dist-with-late] ]
+          ifelse on-staircase? [
+            let walkable neighbors with [not is-wall? and dist-with-late <= my-dist + 10]
+            if any? walkable [
+              set best-step min-one-of walkable [dist-with-late + (count people-on self * 12) + random 25]
+            ]
+          ] [
+            let walkable neighbors with [not is-wall? and dist-with-late < my-dist]
+            if any? walkable [ set best-step min-one-of walkable [dist-with-late] ]
+          ]
         ]
       ]
 
