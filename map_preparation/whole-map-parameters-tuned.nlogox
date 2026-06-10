@@ -25,6 +25,7 @@ people-own [
   wait-counter 
   knows-alternatives?
   staircase-skip?
+  move-interval
 ]
 
 to setup
@@ -270,6 +271,7 @@ to go
           set color blue
           set size scale-factor
           set wait-counter 0
+          set move-interval max (list 1 round (random-normal ticks-per-move (ticks-per-move * 0.3)))
           set staircase-skip? false
           set knows-alternatives? (random 100 < knowledge-of-alternative-exits)
           if knows-alternatives? [ set color cyan ]
@@ -371,32 +373,47 @@ to go
 
   foreach table:keys moves [ k ->
     let contestants table:get moves k
-    let winner max-one-of (turtle-set contestants) [wait-counter]
+    let num-contestants length contestants
     let target-patch patch (item 0 k) (item 1 k)
 
-    ask winner [
-      if target-patch != patch-here [
-        if not any? other people-on ([patches in-radius personal-space] of target-patch) [
-          face target-patch
-          move-to target-patch
-          set wait-counter 0
-          let is-active-late (is-late-exit? and ticks >= late-exit-opening-tick)
-          if is-exit? or is-alt-exit? or is-active-late [
-            let target [target-location] of target-patch
-            ifelse target = "die" [
-              die
-            ] [
-              set xcor (item 0 target)
-              set ycor (item 1 target)
-              set wait-counter 0
-            ]
-          ] 
+    ;; Efekt łuku i naporu (arch-and-push jam)
+    let jam-chance 0
+    if num-contestants = 3 [ set jam-chance 35 ]
+    if num-contestants >= 4 [ set jam-chance 75 ]
+
+    ifelse random 100 < jam-chance [
+      ;; ZATOR: nikt nie przechodzi, wszyscy nabijają wait-counter
+      foreach contestants [ c ->
+        ask c [ set wait-counter wait-counter + 1 ]
+      ]
+    ] [
+      ;; BRAK ZATORU: normalny przepływ – zwycięzca z najdłuższym wait-counter
+      let winner max-one-of (turtle-set contestants) [wait-counter]
+
+      ask winner [
+        if target-patch != patch-here [
+          if not any? other people-on ([patches in-radius personal-space] of target-patch) [
+            face target-patch
+            move-to target-patch
+            set wait-counter 0
+            let is-active-late (is-late-exit? and ticks >= late-exit-opening-tick)
+            if is-exit? or is-alt-exit? or is-active-late [
+              let target [target-location] of target-patch
+              ifelse target = "die" [
+                die
+              ] [
+                set xcor (item 0 target)
+                set ycor (item 1 target)
+                set wait-counter 0
+              ]
+            ] 
+          ]
         ]
       ]
-    ]
-    
-    foreach contestants [ c ->
-      if c != winner [ ask c [ set wait-counter wait-counter + 1 ] ]
+      
+      foreach contestants [ c ->
+        if c != winner [ ask c [ set wait-counter wait-counter + 1 ] ]
+      ]
     ]
   ]
 

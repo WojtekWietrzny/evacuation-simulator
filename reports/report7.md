@@ -3,7 +3,17 @@
 
 ## Porównanie wykresów danych symulacji i danych rzeczywistych
 
-WSTAW WYKRES POŁĄCZONY OSTATECZNY
+### Po zmianach otwarcia drzwi oraz zmiany ordynacji ruchu na schodach
+
+![alt text](wykres_po_naprawie_schodow.png)
+
+### Po dodaniu zróżnicowanej prędkości
+
+![alt text](wykres_zroznicowana_predkosc.png)
+
+### Po dodaniu możliwości powstawania zatorów
+
+![alt text](wykres_po_zatorach.png)
 
 ## Opóźnienie otwarcia drzwi pod schodami jednymi oraz drugimi
 Przesunęliśmy moment otwarcia drzwi ewakuacyjnych pod schodami an 259 sekundę zgodnie z danymi z pracy magisterskiej
