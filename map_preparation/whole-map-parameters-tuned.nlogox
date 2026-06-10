@@ -26,6 +26,8 @@ people-own [
   knows-alternatives?
   staircase-skip?
   move-interval
+  base-move-interval
+  fatigue
 ]
 
 to setup
@@ -272,11 +274,11 @@ to go
           set size scale-factor
           set wait-counter 0
           set move-interval max (list 1 round (random-normal ticks-per-move (ticks-per-move * 0.3)))
+          set base-move-interval move-interval
+          set fatigue 0
           set staircase-skip? false
           set knows-alternatives? (random 100 < knowledge-of-alternative-exits)
           if knows-alternatives? [ set color cyan ]
-          ;; NOWE: losowanie indywidualnej prędkości z rozkładu normalnego
-          set move-interval max (list 1 round (random-normal ticks-per-move (ticks-per-move * 0.3)))
         ]
         set already-spawned already-spawned + 1
       ]
@@ -294,13 +296,18 @@ to go
     stop 
   ]
 
-  ;; ZMIANA: usunięto globalny `if ticks mod ticks-per-move = 0`
-  ;; Każdy agent decyduje sam na podstawie swojego move-interval
   let moves table:make   
 
   ask people [
-    ;; NOWE: indywidualny interwał ruchu
     if ticks mod move-interval != 0 [ stop ]
+
+    if [is-staircase?] of patch-here [
+      set fatigue fatigue + 1
+      let max-interval round (base-move-interval * 1.5)
+      if fatigue mod 10 = 0 [
+        set move-interval min (list max-interval (move-interval + 1))
+      ]
+    ]
 
     ifelse [is-staircase?] of patch-here [
       set staircase-skip? not staircase-skip?
