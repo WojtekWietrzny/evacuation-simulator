@@ -257,155 +257,149 @@ to calculate-flood-fill [sources]
 end
 
 to go
-  ;; 0. Update Visuals for Late Exits
   if ticks = late-exit-opening-tick [
     ask patches with [is-late-exit?] [ set pcolor yellow ]
   ]
 
-  ;; 1. Delayed Spawning Logic
   ask patches with [is-spawner?] [
     if ticks >= start-time and already-spawned < max-to-spawn [
-      ;; Spawn one agent every few ticks if the space is clear (respecting personal-space)
       if ticks mod 5 = 0 and not any? people-on (patches in-radius personal-space) [
         sprout 1 [
           set breed people
           set shape "person"
           set color blue
-          set size scale-factor ;; Size matches your slider
+          set size scale-factor
           set wait-counter 0
-          set staircase-skip? false ;;
-          ;; Agent Knowledge Assignment
+          set staircase-skip? false
           set knows-alternatives? (random 100 < knowledge-of-alternative-exits)
-          if knows-alternatives? [ set color cyan ] ;; Visual indicator for knowledge
+          if knows-alternatives? [ set color cyan ]
+          ;; NOWE: losowanie indywidualnej prędkości z rozkładu normalnego
+          set move-interval max (list 1 round (random-normal ticks-per-move (ticks-per-move * 0.3)))
         ]
         set already-spawned already-spawned + 1
       ]
     ]
   ]
 
-  ;; 2. Stop if everyone is out and spawners are done
   if not any? people and all? patches with [is-spawner?] [already-spawned >= max-to-spawn] [ 
     export-plot "Total Evacuated Agents" (word "simulation_runs/evacuation_plot_" ticks "_" random 10000 ".csv")
     ifelse record-movie? and vid:recorder-status = "recording" [
       vid:save-recording (word "recordings/evacuation_" ticks ".mp4")
-      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nMovie saved in recordings/ and Plot data saved in simulation_runs/ directory.")
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nMovie saved.")
     ] [
-      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.\nPlot data saved in simulation_runs/ directory.")
+      user-message (word "Evacuation Complete!\nTime: " ticks " ticks.")
     ]
     stop 
   ]
 
-  ;; 3. Movement
-  if ticks mod ticks-per-move = 0 [
-    let moves table:make   
+  ;; ZMIANA: usunięto globalny `if ticks mod ticks-per-move = 0`
+  ;; Każdy agent decyduje sam na podstawie swojego move-interval
+  let moves table:make   
 
-    ask people [
-      ifelse [is-staircase?] of patch-here [
-        set staircase-skip? not staircase-skip?
-        if staircase-skip? [
-          set wait-counter wait-counter + 1 ;; Zwiększamy licznik, by nie tracił pierwszeństwa przy tłoku
-          stop ;; Przerywa ruch w tym ticku dla tego konkretnego agenta
-        ]
-      ] [
-        set staircase-skip? false
+  ask people [
+    ;; NOWE: indywidualny interwał ruchu
+    if ticks mod move-interval != 0 [ stop ]
+
+    ifelse [is-staircase?] of patch-here [
+      set staircase-skip? not staircase-skip?
+      if staircase-skip? [
+        set wait-counter wait-counter + 1
+        stop
       ]
-      
-      let best-step patch-here 
-      
-      ;; PATHFINDING LOGIC: Switch between 4 distance maps
-let on-staircase? [is-staircase?] of patch-here
+    ] [
+      set staircase-skip? false
+    ]
+    
+    let best-step patch-here 
+    let on-staircase? [is-staircase?] of patch-here
 
-      ifelse ticks < late-exit-opening-tick [
-        ifelse knows-alternatives? [
-          let my-dist [dist-with-alt] of patch-here
-          ifelse on-staircase? [
-            let walkable neighbors with [not is-wall? and dist-with-alt <= my-dist + 10]
-            if any? walkable [
-              set best-step min-one-of walkable [dist-with-alt + (count people-on self * 12) + random 25]
-            ]
-          ] [
-            let walkable neighbors with [not is-wall? and dist-with-alt < my-dist]
-            if any? walkable [ set best-step min-one-of walkable [dist-with-alt] ]
+    ifelse ticks < late-exit-opening-tick [
+      ifelse knows-alternatives? [
+        let my-dist [dist-with-alt] of patch-here
+        ifelse on-staircase? [
+          let walkable neighbors with [not is-wall? and dist-with-alt <= my-dist + 10]
+          if any? walkable [
+            set best-step min-one-of walkable [dist-with-alt + (count people-on self * 12) + random 25]
           ]
         ] [
-          let my-dist [dist-primary] of patch-here
-          ifelse on-staircase? [
-            let walkable neighbors with [not is-wall? and dist-primary <= my-dist + 10]
-            if any? walkable [
-              set best-step min-one-of walkable [dist-primary + (count people-on self * 12) + random 25]
-            ]
-          ] [
-            let walkable neighbors with [not is-wall? and dist-primary < my-dist]
-            if any? walkable [ set best-step min-one-of walkable [dist-primary] ]
-          ]
+          let walkable neighbors with [not is-wall? and dist-with-alt < my-dist]
+          if any? walkable [ set best-step min-one-of walkable [dist-with-alt] ]
         ]
       ] [
-        ifelse knows-alternatives? [
-          let my-dist [dist-with-all] of patch-here
-          ifelse on-staircase? [
-            let walkable neighbors with [not is-wall? and dist-with-all <= my-dist + 10]
-            if any? walkable [
-              set best-step min-one-of walkable [dist-with-all + (count people-on self * 12) + random 25]
-            ]
-          ] [
-            let walkable neighbors with [not is-wall? and dist-with-all < my-dist]
-            if any? walkable [ set best-step min-one-of walkable [dist-with-all] ]
+        let my-dist [dist-primary] of patch-here
+        ifelse on-staircase? [
+          let walkable neighbors with [not is-wall? and dist-primary <= my-dist + 10]
+          if any? walkable [
+            set best-step min-one-of walkable [dist-primary + (count people-on self * 12) + random 25]
           ]
         ] [
-          let my-dist [dist-with-late] of patch-here
-          ifelse on-staircase? [
-            let walkable neighbors with [not is-wall? and dist-with-late <= my-dist + 10]
-            if any? walkable [
-              set best-step min-one-of walkable [dist-with-late + (count people-on self * 12) + random 25]
-            ]
-          ] [
-            let walkable neighbors with [not is-wall? and dist-with-late < my-dist]
-            if any? walkable [ set best-step min-one-of walkable [dist-with-late] ]
-          ]
+          let walkable neighbors with [not is-wall? and dist-primary < my-dist]
+          if any? walkable [ set best-step min-one-of walkable [dist-primary] ]
         ]
       ]
-
-      let key (list [pxcor] of best-step [pycor] of best-step)
-      let current-list []
-      if table:has-key? moves key [ set current-list table:get moves key ]
-      table:put moves key (lput self current-list)
+    ] [
+      ifelse knows-alternatives? [
+        let my-dist [dist-with-all] of patch-here
+        ifelse on-staircase? [
+          let walkable neighbors with [not is-wall? and dist-with-all <= my-dist + 10]
+          if any? walkable [
+            set best-step min-one-of walkable [dist-with-all + (count people-on self * 12) + random 25]
+          ]
+        ] [
+          let walkable neighbors with [not is-wall? and dist-with-all < my-dist]
+          if any? walkable [ set best-step min-one-of walkable [dist-with-all] ]
+        ]
+      ] [
+        let my-dist [dist-with-late] of patch-here
+        ifelse on-staircase? [
+          let walkable neighbors with [not is-wall? and dist-with-late <= my-dist + 10]
+          if any? walkable [
+            set best-step min-one-of walkable [dist-with-late + (count people-on self * 12) + random 25]
+          ]
+        ] [
+          let walkable neighbors with [not is-wall? and dist-with-late < my-dist]
+          if any? walkable [ set best-step min-one-of walkable [dist-with-late] ]
+        ]
+      ]
     ]
 
-    foreach table:keys moves [ k ->
-      let contestants table:get moves k
-      let winner max-one-of (turtle-set contestants) [wait-counter]
-      let target-patch patch (item 0 k) (item 1 k)
+    let key (list [pxcor] of best-step [pycor] of best-step)
+    let current-list []
+    if table:has-key? moves key [ set current-list table:get moves key ]
+    table:put moves key (lput self current-list)
+  ]
 
-      ask winner [
-        if target-patch != patch-here [
-          ;; Check if the spot is actually clear + enough personal space
-          if not any? other people-on ([patches in-radius personal-space] of target-patch) [
-            face target-patch
-            move-to target-patch
-            set wait-counter 0
-            ;; Escape or Teleport Condition
-            let is-active-late (is-late-exit? and ticks >= late-exit-opening-tick)
-            if is-exit? or is-alt-exit? or is-active-late [
-              let target [target-location] of target-patch
-              ifelse target = "die" [
-                die
-              ] [
-                ;; Teleport Logic: target is [px py]
-                set xcor (item 0 target)
-                set ycor (item 1 target)
-                ;; Optional: reset wait-counter or face a direction
-                set wait-counter 0
-              ]
-            ] 
-          ]
+  foreach table:keys moves [ k ->
+    let contestants table:get moves k
+    let winner max-one-of (turtle-set contestants) [wait-counter]
+    let target-patch patch (item 0 k) (item 1 k)
+
+    ask winner [
+      if target-patch != patch-here [
+        if not any? other people-on ([patches in-radius personal-space] of target-patch) [
+          face target-patch
+          move-to target-patch
+          set wait-counter 0
+          let is-active-late (is-late-exit? and ticks >= late-exit-opening-tick)
+          if is-exit? or is-alt-exit? or is-active-late [
+            let target [target-location] of target-patch
+            ifelse target = "die" [
+              die
+            ] [
+              set xcor (item 0 target)
+              set ycor (item 1 target)
+              set wait-counter 0
+            ]
+          ] 
         ]
       ]
-      
-      foreach contestants [ c ->
-        if c != winner [ ask c [ set wait-counter wait-counter + 1 ] ]
-      ]
+    ]
+    
+    foreach contestants [ c ->
+      if c != winner [ ask c [ set wait-counter wait-counter + 1 ] ]
     ]
   ]
+
   tick
   if record-movie? and vid:recorder-status = "recording" [
     vid:record-view
